@@ -4,9 +4,26 @@ import numpy as np
 import plotly.graph_objects as go
 import random
 
-# === Streamlit Setup ===
-st.set_page_config(page_title="Blackjack Card Counting Simulator", layout="wide")
-st.title("🃏 Blackjack Simulation with Card Counting (8 Decks)")
+st.set_page_config(
+    page_title="Blackjack Simulator",
+    layout="centered",  # switch from "wide" to "centered"
+    initial_sidebar_state="expanded"
+)
+
+# Optional: CSS tweaks for mobile
+st.markdown("""
+    <style>
+        @media (max-width: 768px) {
+            h1 { font-size: 1.5em; }
+            .block-container {
+                padding: 1rem 1rem;
+            }
+        }
+        .stSlider > div[data-baseweb="slider"] {
+            padding: 6px 0;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # === Sidebar Parameters ===
 initial_bankroll = st.sidebar.number_input("Initial Bankroll ($)", 1000, 1000000, 100000, step=1000)
