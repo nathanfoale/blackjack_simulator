@@ -1,40 +1,39 @@
-
 import streamlit as st
-import numpy as np
 import plotly.graph_objects as go
+import numpy as np
 import random
 
 # === Streamlit Setup ===
-st.set_page_config(
-    page_title="Blackjack Simulator",
-    layout="centered",  # switch from "wide" to "centered"
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Blackjack Card Counting Simulator", layout="wide")
+st.title("🃏 Blackjack Simulation with Card Counting (8 Decks)")
 
-# Optional: CSS tweaks for mobile
+# === Mobile Optimization CSS ===
 st.markdown("""
     <style>
-        @media (max-width: 768px) {
-            h1 { font-size: 1.5em; }
-            .block-container {
-                padding: 1rem 1rem;
+        @media only screen and (max-width: 600px) {
+            .element-container {
+                padding-left: 5px !important;
+                padding-right: 5px !important;
             }
-        }
-        .stSlider > div[data-baseweb="slider"] {
-            padding: 6px 0;
+            .block-container {
+                padding-left: 10px !important;
+                padding-right: 10px !important;
+            }
+            canvas {
+                width: 100% !important;
+                height: auto !important;
+            }
         }
     </style>
 """, unsafe_allow_html=True)
 
-# === Sidebar Parameters ===
-initial_bankroll = st.sidebar.number_input("Initial Bankroll ($)", 1000, 1000000, 100000, step=1000)
+# === Parameters ===
+initial_bankroll = st.sidebar.number_input("Initial Bankroll ($)", 1000, 1000000, 1000000, step=1000)
 min_bet = st.sidebar.number_input("Minimum Bet ($)", 10, 500, 100, step=10)
-spread = st.sidebar.slider("Bet Spread (Hi-Lo Count Multiplier)", 1, 20, 10)
+spread = st.sidebar.slider("Bet Spread (for Hi-Lo Count)", 1, 20, 10)
 num_simulations = st.sidebar.slider("Number of Simulations", 1, 500, 100)
-num_hands = st.sidebar.slider("Hands per Simulation", 100, 10000, 2000, step=100)
+num_hands = st.sidebar.slider("Hands per Simulation", 100, 20000, 10000, step=100)
 num_decks = st.sidebar.slider("Number of Decks", 1, 8, 8)
-blackjack_payout = st.sidebar.selectbox("Blackjack Payout", ["3:2", "6:5"])
-enable_surrender = st.sidebar.checkbox("Allow Surrender", value=True)
 
 # === Hi-Lo Card Values ===
 card_values = {
@@ -69,71 +68,76 @@ def simulate_single_run():
             bet *= min(spread, int(true_count))
         bet = min(bankroll, bet)
 
-        # Estimate probabilities based on card counting advantage
-        edge = 0.005 + (0.005 * true_count)  # up to ~+3% edge
-        win_prob = min(0.44 + edge, 0.51)
-        lose_prob = max(0.44 - edge, 0.38)
-        push_prob = 1.0 - win_prob - lose_prob
+        # Slight player edge when true count is high
+        win_prob = 0.48 + min(0.01 * max(0, true_count - 1), 0.05)  # Max edge boost ~5%
+        lose_prob = 1 - win_prob - 0.08  # push ~8%
+        push_prob = 0.08
 
-        total = win_prob + lose_prob + push_prob
-        win_prob /= total
-        lose_prob /= total
-        push_prob = 1.0 - win_prob - lose_prob
+        # Safety correction
+        if win_prob + lose_prob + push_prob != 1.0:
+            delta = 1.0 - (win_prob + lose_prob + push_prob)
+            lose_prob += delta  # minor fix
 
         outcome = np.random.choice(["win", "lose", "push"], p=[win_prob, lose_prob, push_prob])
         if outcome == "win":
-            if np.random.rand() < 0.05:  # chance of blackjack
-                payout = 1.5 if blackjack_payout == "3:2" else 1.2
-                bankroll += bet * payout
-            else:
-                bankroll += bet
+            bankroll += bet * 1.5  # includes blackjack payout approximation
         elif outcome == "lose":
-            if enable_surrender and np.random.rand() < 0.05:  # small chance of surrender
-                bankroll -= bet / 2
-            else:
-                bankroll -= bet
-        # push: bankroll unchanged
+            bankroll -= bet
 
         bankrolls.append(bankroll)
+
         if bankroll <= 0:
             break
 
     return bankrolls
 
 # === Run Simulations ===
-with st.spinner("Simulating Blackjack hands..."):
-    all_results = [simulate_single_run() for _ in range(num_simulations)]
-
+all_results = [simulate_single_run() for _ in range(num_simulations)]
 max_length = max(len(r) for r in all_results)
 padded_results = [r + [r[-1]] * (max_length - len(r)) for r in all_results]
 array_results = np.array(padded_results)
 
 avg_bankroll = np.mean(array_results, axis=0)
+std_dev = np.std(array_results[:, -1])
 final_bankrolls = array_results[:, -1]
 roi = ((final_bankrolls.mean() - initial_bankroll) / initial_bankroll) * 100
 risk_of_ruin = np.mean(final_bankrolls <= 0) * 100
-std_dev = np.std(final_bankrolls)
 
-# === Plot with Plotly ===
+# === Plotly Graph ===
 fig = go.Figure()
-for run in array_results[:20]:
-    fig.add_trace(go.Scatter(y=run, mode='lines', line=dict(width=1), opacity=0.15, showlegend=False))
-fig.add_trace(go.Scatter(y=avg_bankroll, mode='lines', name='Average Bankroll', line=dict(color='blue', width=4)))
-fig.add_trace(go.Scatter(y=[initial_bankroll] * max_length, mode='lines', name='Initial Bankroll',
-                         line=dict(dash='dash', color='black')))
-fig.update_layout(title="💰 Blackjack Bankroll Simulation",
-                  xaxis_title="Hands Played",
-                  yaxis_title="Bankroll ($)",
-                  height=500)
-st.plotly_chart(fig, use_container_width=True)
 
-# === Results Summary ===
-st.subheader("📊 Simulation Results")
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("💸 Final Avg Bankroll", f"${final_bankrolls.mean():,.0f}")
-col2.metric("📉 Std Dev", f"${std_dev:,.0f}")
-col3.metric("📈 ROI", f"{roi:.2f}%", delta_color="normal")
-col4.metric("⚠️ Risk of Ruin", f"{risk_of_ruin:.2f}%")
+# Lighter traces for individual runs
+for run in array_results:
+    fig.add_trace(go.Scatter(y=run, mode='lines', line=dict(color='gray', width=1), opacity=0.2, showlegend=False))
+
+# Average line
+fig.add_trace(go.Scatter(y=avg_bankroll, mode='lines', name='Average Bankroll',
+                         line=dict(color='blue', width=3)))
+
+# Horizontal initial bankroll line
+fig.add_shape(type='line', x0=0, x1=max_length, y0=initial_bankroll, y1=initial_bankroll,
+              line=dict(color='black', dash='dash'), name="Initial Bankroll")
+
+fig.update_layout(
+    title="📈 Bankroll Trajectory Over Time",
+    xaxis_title="Hand Number",
+    yaxis_title="Bankroll ($)",
+    dragmode=False,
+    hovermode="x unified",
+    height=500,
+    margin=dict(l=10, r=10, t=40, b=10),
+    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+)
+
+# Show chart
+st.plotly_chart(fig, use_container_width=True, config={"responsive": True, "scrollZoom": False})
+
+# === Summary ===
+st.subheader("📊 Simulation Results Summary")
+st.metric("Final Average Bankroll", f"${final_bankrolls.mean():,.0f}")
+st.metric("Standard Deviation", f"${std_dev:,.0f}")
+st.metric("Return on Investment (ROI)", f"{roi:.2f}%")
+st.metric("Risk of Ruin", f"{risk_of_ruin:.2f}%")
 
 # === Histogram of Final Bankrolls ===
 st.subheader("📉 Distribution of Final Bankrolls")
